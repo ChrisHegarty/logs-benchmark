@@ -14,15 +14,21 @@ import (
 )
 
 // elasticsearch writes to Elasticsearch's default setup for logs: the
-// built-in logs-*-* data stream template (LogsDB mode in 9.x).
+// built-in logs-*-* data stream template (LogsDB mode in 9.x), unless the
+// system type carries variant options (see esOptions).
 type elasticsearch struct {
 	addr string // e.g. http://es-es-http:9200
+	opts esOptions
 }
 
+// esTarget is the default data stream name; the "target" option overrides it.
 const esTarget = "logs-bench-default"
 
 func (s *elasticsearch) WaitReady() error {
-	return waitHTTP(s.addr+"/_cluster/health?wait_for_status=yellow&timeout=5s", esClusterReady)
+	if err := waitHTTP(s.addr+"/_cluster/health?wait_for_status=yellow&timeout=5s", esClusterReady); err != nil {
+		return err
+	}
+	return s.opts.apply(s.addr)
 }
 
 func esClusterReady(r *http.Response, body []byte) error {
@@ -100,7 +106,7 @@ func esBulkBatch(entries []LogEntry) Batch {
 }
 
 func (s *elasticsearch) Send(ctx context.Context, b Batch) (int, error) {
-	return esBulkSend(ctx, s.addr+"/"+esTarget+"/_bulk", b)
+	return esBulkSend(ctx, s.addr+"/"+s.opts.target+"/_bulk", b)
 }
 
 // esBulkSend posts a bulk request to bulkURL.
@@ -223,11 +229,21 @@ const esQTimeBuckets = `{
 }`
 
 func (s *elasticsearch) Queries(p QueryParams) []Query {
-	return esQuerySet(s.addr, esTarget, p.App)
+	return esQuerySet(s.addr, s.opts.target, p.App)
 }
 
 func (s *elasticsearch) StoredRows(ctx context.Context) (*int64, error) {
-	return esStoredRows(ctx, s.addr, esTarget)
+	switch s.opts.probe {
+	case esProbeNone:
+		// No server-side count, like loki: the dashboard uses the lines sent.
+		return nil, nil
+	case esProbeSeqNo:
+		return esStoredRowsSeqNo(ctx, s.addr, s.opts.target)
+	case esProbeCount:
+		return esStoredRows(ctx, s.addr, s.opts.target)
+	default:
+		return nil, fmt.Errorf("unknown elasticsearch probe %q", s.opts.probe)
+	}
 }
 
 // esStoredRows counts all documents via the _count API (match_all, no time

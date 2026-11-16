@@ -61,13 +61,49 @@ type WriteClient interface {
 	Send(ctx context.Context, b Batch) (retries int, err error)
 }
 
+// splitSystemType separates the engine type from its variant options. A system
+// type may carry options after semicolons, e.g.
+// "elasticsearch;probe=seqno;set.index.refresh_interval=30s". Only the
+// elasticsearch adapter accepts options; the others reject them, so a typo
+// cannot silently run a different experiment.
+func splitSystemType(sysType string) (base string, opts []string) {
+	parts := strings.Split(sysType, ";")
+	return parts[0], parts[1:]
+}
+
+func rejectOptions(base string, opts []string) error {
+	if len(opts) > 0 {
+		return fmt.Errorf("system type %q does not take options, got %q", base, opts)
+	}
+	return nil
+}
+
+// newElasticsearch builds the adapter, the one engine that takes options. Both
+// the write and the query client are the same value.
+func newElasticsearch(addr string, opts []string) (*elasticsearch, error) {
+	o, err := parseESOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+	return &elasticsearch{addr: addr, opts: o}, nil
+}
+
 // NewWriteClient returns the write client for the given engine type at addr.
 func NewWriteClient(sysType, addr string) (WriteClient, error) {
+	sysType, opts := splitSystemType(sysType)
+	if sysType == "elasticsearch" {
+		es, err := newElasticsearch(addr, opts)
+		if err != nil {
+			return nil, err // not `return es, err`: that would be a non-nil interface
+		}
+		return es, nil
+	}
+	if err := rejectOptions(sysType, opts); err != nil {
+		return nil, err
+	}
 	switch sysType {
 	case "victorialogs":
 		return &victoriaLogs{addr: addr}, nil
-	case "elasticsearch":
-		return &elasticsearch{addr: addr}, nil
 	case "loki":
 		return &loki{addr: addr}, nil
 	case "loki-json":
@@ -131,11 +167,20 @@ type QueryClient interface {
 
 // NewQueryClient returns the query client for the given engine type at addr.
 func NewQueryClient(sysType, addr string) (QueryClient, error) {
+	sysType, opts := splitSystemType(sysType)
+	if sysType == "elasticsearch" {
+		es, err := newElasticsearch(addr, opts)
+		if err != nil {
+			return nil, err // not `return es, err`: that would be a non-nil interface
+		}
+		return es, nil
+	}
+	if err := rejectOptions(sysType, opts); err != nil {
+		return nil, err
+	}
 	switch sysType {
 	case "victorialogs":
 		return &victoriaLogs{addr: addr}, nil
-	case "elasticsearch":
-		return &elasticsearch{addr: addr}, nil
 	case "loki":
 		return &loki{addr: addr}, nil
 	case "loki-json":

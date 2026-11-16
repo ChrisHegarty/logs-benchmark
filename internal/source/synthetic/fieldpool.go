@@ -28,6 +28,20 @@ type PoolField struct {
 	gen     func(f *gofakeit.Faker) string // dynamic only
 }
 
+// AllPoolFields returns every field an app or host can carry (the host
+// fields and the app pool), without duplicates. Used to build mappings that
+// cover the whole workload.
+func AllPoolFields() []PoolField {
+	var out []PoolField
+	for _, f := range hostFields {
+		out = append(out, PoolField{Name: f.Name, Numeric: f.Numeric})
+	}
+	for _, f := range fieldPool {
+		out = append(out, PoolField{Name: f.Name, Numeric: f.Numeric})
+	}
+	return out
+}
+
 // draw produces one per-line value for an enum or dynamic field.
 func (p *PoolField) draw(f *gofakeit.Faker) string {
 	if p.kind == fieldDynamic {
