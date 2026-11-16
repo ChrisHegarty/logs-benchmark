@@ -1,5 +1,5 @@
-// Command fieldstats generates harness log lines with the settings of the
-// Elasticsearch ladder run (125 hosts, 40 apps, seed 1) and reports, per field,
+// Command fieldstats generates harness log lines with the settings you
+// give (by default 125 hosts, 40 apps, seed 1) and reports, per field,
 // how much information the values carry: presence rate, distinct values,
 // empirical entropy and the size of the column under DEFLATE.
 //
@@ -53,9 +53,9 @@ type fieldOut struct {
 
 func main() {
 	n := flag.Int("n", 2000000, "records to generate")
-	hosts := flag.Int("hosts", 125, "host cardinality (ladder run: 125)")
-	apps := flag.Int("apps", 40, "app cardinality (ladder run: 40)")
-	seed := flag.Int64("seed", 1, "generator seed (ladder run: 1)")
+	hosts := flag.Int("hosts", 125, "host cardinality (default as in the example run config)")
+	apps := flag.Int("apps", 40, "app cardinality (default as in the example run config)")
+	seed := flag.Int64("seed", 1, "generator seed (default as in the example run config)")
 	sampleCap := flag.Int("sample", 200000, "values per field kept for the DEFLATE size")
 	flag.Parse()
 

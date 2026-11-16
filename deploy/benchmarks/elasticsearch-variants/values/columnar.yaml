@@ -1,0 +1,7 @@
+# Example chart values for an instance that needs a cluster setting from a
+# build you provide: pass the image with ES_IMAGE when installing, since the
+# chart refuses to render this setting without one. The setting must be in
+# elasticsearch.yml before the first bulk.
+# config is deep-merged with deploy/systems/elasticsearch.yml.
+config:
+  cluster.logsdb_columnar.enabled: true

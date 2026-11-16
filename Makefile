@@ -71,11 +71,11 @@ EXTRA_VALUES ?=
 XVALS = $(if $(EXTRA_VALUES),-f $(EXTRA_VALUES))
 
 # Optional Elasticsearch image for install-elasticsearch (the chart's `image`):
-# a build that is not published under the chart's `version` tag, for example a
-# snapshot you built and pushed. Set it in the environment or on the command
+# a build that is not published under the chart's `version` tag, for example one
+# you built and pushed. Set it in the environment or on the command
 # line; it wins over every values file and applies to EVERY elasticsearch
 # install made with it set, so a released arm installed from the same shell
-# would get the snapshot too. Give it per install, not with `export`. The
+# would get that image too. Give it per install, not with `export`. The
 # harness refuses to start on an arm whose node is not the version and build
 # its system type asserts (version=, build=).
 ES_IMAGE ?=
@@ -90,7 +90,7 @@ GOLANGCI_LINT_VERSION := 2.14.0
 
 .PHONY: build test fmt vet check-all golangci-lint install-golangci-lint govulncheck \
 	kind-up kind-down image kind-load release \
-	check-context check-pool check-bench check-config check-no-pool helm-repos \
+	check-context check-pool check-bench check-bench-image check-config check-no-pool helm-repos \
 	$(addprefix install-,$(ENGINES)) $(addprefix uninstall-,$(ENGINES)) \
 	install-all-systems uninstall-all-systems \
 	deploy-bench undeploy-bench deploy-dev undeploy-dev \
@@ -287,8 +287,24 @@ uninstall-all-systems: check-no-pool check-context
 ## The benchmark itself (writer + querier + dashboards): one run config
 ## (BENCH=<benchmark dir> RUN=<name>) deployed next to the systems.
 
-deploy-bench: check-config check-context
-	$(HELM) upgrade --install bench deploy/chart --create-namespace -f $(CONFIG) $(HELM_SET)
+# BENCH_IMAGE_REPO and BENCH_IMAGE_TAG, when set (environment or command line),
+# override the harness image of the run config.
+BENCH_IMAGE_REPO ?=
+BENCH_IMAGE_TAG  ?=
+BENCH_IMAGE_SET   = $(if $(BENCH_IMAGE_REPO),--set image.repository=$(BENCH_IMAGE_REPO)) $(if $(BENCH_IMAGE_TAG),--set image.tag=$(BENCH_IMAGE_TAG))
+
+# A run config that names its own harness image tag (image.tag) names one that
+# exists only in the registry you pushed to. Without a repository, from the config
+# or BENCH_IMAGE_REPO, the chart falls back to the upstream image, where that tag
+# does not exist, so stop here with the fix instead of at a pull error.
+check-bench-image:
+	@if awk '/^image:/{i=1;next} /^[^ #]/{i=0} i&&/^[ \t]+tag:/{t=1} i&&/^[ \t]+repository:/{r=1} END{exit !(t&&!r)}' $(CONFIG) \
+	   && [ -z "$(BENCH_IMAGE_REPO)" ] && ! echo "$(HELM_SET)" | grep -q 'image.repository'; then \
+		echo "$(CONFIG) names a harness image tag but no repository: set BENCH_IMAGE_REPO=<registry>/logs-benchmark (and BENCH_IMAGE_TAG to override the tag); see docs/elasticsearch-variants.md"; exit 1; \
+	fi
+
+deploy-bench: check-config check-context check-bench-image
+	$(HELM) upgrade --install bench deploy/chart --create-namespace -f $(CONFIG) $(BENCH_IMAGE_SET) $(HELM_SET)
 
 undeploy-bench: check-context
 	$(HELM) uninstall bench || true

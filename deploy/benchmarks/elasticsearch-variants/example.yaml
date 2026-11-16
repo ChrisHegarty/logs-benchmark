@@ -1,0 +1,49 @@
+# Example run config for comparing variants of the elasticsearch system: one
+# instance per variant, each on its own node, all fed the same seeded stream by
+# one writer. Copy it and edit the systems; the variant options are listed in
+# docs/elasticsearch-variants.md.
+#
+# Every system asserts the version and build of its node (version=, build=), so
+# an image meant for one instance cannot end up on another. An instance that
+# sets mode= or set.* also has its backing index read back and checked before
+# the first write. The addresses are the ECK services of the instances, which
+# are installed with POOL=<name>.
+
+# The harness image is built and pushed by you: deploy with
+# BENCH_IMAGE_REPO=<registry>/logs-benchmark (the tag defaults to "variants").
+image:
+  tag: variants
+  pullPolicy: IfNotPresent
+
+writer:
+  rate: 10000
+  rampStep: 10000
+  rampInterval: 10m
+  rampMax: 100000
+  rampHold: 10m
+  dropOnFull: true
+  buffer: 400000
+  startDelaySeconds: 180
+  batchLines: 2000
+  workers: 32
+  hosts: 125
+  apps: 40
+  seed: 1
+
+querier:
+  interval: 0
+  timeout: 30s
+
+systems:
+  # No options besides the assertions: the setup the other run configs use.
+  - name: baseline-1
+    type: "elasticsearch;version=<released version>;build=release"
+    addr: http://baseline-1-es-http:9200
+  # A trial license, a longer refresh interval and no default pipeline.
+  - name: tuned-1
+    type: "elasticsearch;version=<released version>;build=release;mode=logsdb;license=trial;set.index.refresh_interval=30s;set.index.default_pipeline=_none"
+    addr: http://tuned-1-es-http:9200
+  # Only the named workload fields doc-values only (noindex=all maps every one).
+  - name: noindex-1
+    type: "elasticsearch;version=<released version>;build=release;mode=logsdb;noindex=method+status+path"
+    addr: http://noindex-1-es-http:9200

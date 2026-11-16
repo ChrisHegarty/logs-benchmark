@@ -1,0 +1,7 @@
+# Sizing overlay for the instances of this run config. Give every instance the
+# same PVC size and storage class: cloud disks scale IOPS and throughput with
+# volume size, so unequal volumes would mean unequal disks. Set the class of
+# your cloud (the one below is GKE's pd-balanced).
+storage:
+  size: 500Gi
+  className: standard-rwo
