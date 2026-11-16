@@ -1,4 +1,10 @@
 {{- $pool := required "pool is required: set it to the instance name" .Values.pool -}}
+{{- if and .Values.image (not .Values.version) -}}
+{{- fail "image is set but version is empty: version must match the Elasticsearch version of the image" -}}
+{{- end -}}
+{{- if and (index .Values.config "cluster.logsdb_columnar.enabled") (not .Values.image) -}}
+{{- fail "cluster.logsdb_columnar.enabled needs a snapshot build: set image (make: ES_IMAGE=<image>)" -}}
+{{- end -}}
 apiVersion: elasticsearch.k8s.elastic.co/v1
 kind: Elasticsearch
 metadata:
@@ -6,6 +12,9 @@ metadata:
   name: {{ $pool }}
 spec:
   version: {{ .Values.version }}
+  {{- with .Values.image }}
+  image: {{ . }}
+  {{- end }}
   http:
     tls:
       selfSignedCertificate:
@@ -37,6 +46,10 @@ spec:
             - name: elasticsearch
               resources:
                 {{- toYaml .Values.resources | nindent 16 }}
+              {{- with .Values.env }}
+              env:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
           # Run ONLY on this instance's node pool (label+taint
           # logs-benchmark.victoriametrics.com/system={{ $pool }}).
           nodeSelector:

@@ -9,11 +9,23 @@ pool: ""
 
 version: ""
 
+# Optional. Overrides the image ECK derives from `version`, to run a build that
+# is not published under that version tag (for example a pinned snapshot digest).
+# `version` must still match the image's Elasticsearch version.
+# With make, pass it as ES_IMAGE=<image> (environment or command line).
+image: ""
+
 # Rendered under nodeSets[0].config.
 config: {}
 
 # Rendered on the elasticsearch container.
 resources: {}
+
+# Optional environment variables of the elasticsearch container, as a list of
+# {name, value}. The heap experiments use ES_JAVA_OPTS to set an explicit heap
+# (-Xms and -Xmx) without a memory limit, so only the heap changes and the page
+# cache stays unrestricted.
+env: []
 
 storage:
   size: ""

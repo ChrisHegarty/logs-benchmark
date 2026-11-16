@@ -70,6 +70,17 @@ CONFIG ?= $(if $(and $(BENCH),$(RUN)),$(BENCH)/$(RUN).yaml)
 EXTRA_VALUES ?=
 XVALS = $(if $(EXTRA_VALUES),-f $(EXTRA_VALUES))
 
+# Optional Elasticsearch image for install-elasticsearch (the chart's `image`):
+# a build that is not published under the chart's `version` tag, for example a
+# snapshot you built and pushed. Set it in the environment or on the command
+# line; it wins over every values file and applies to EVERY elasticsearch
+# install made with it set, so a released arm installed from the same shell
+# would get the snapshot too. Give it per install, not with `export`. The
+# harness refuses to start on an arm whose node is not the version and build
+# its system type asserts (version=, build=).
+ES_IMAGE ?=
+ES_IMAGE_SET = $(if $(ES_IMAGE),--set image=$(ES_IMAGE))
+
 HELM    = helm --kube-context $(CONTEXT) --namespace $(NS)
 KUBECTL = kubectl --context $(CONTEXT) --namespace $(NS)
 
@@ -188,7 +199,7 @@ install-elasticsearch: check-context check-pool check-bench helm-repos
 	$(call CHECK_SIZING,elasticsearch)
 	$(HELM) upgrade --install --wait eck elastic/eck-operator --version $(ECK_CHART_VERSION) --create-namespace
 	$(PIN) deploy/systems/pin/elasticsearch.yaml | $(HELM) upgrade --install $(POOL) deploy/charts/elasticsearch \
-		--create-namespace -f deploy/systems/elasticsearch.yml -f $(BENCH)/systems/elasticsearch.yaml $(XVALS) -f -
+		--create-namespace -f deploy/systems/elasticsearch.yml -f $(BENCH)/systems/elasticsearch.yaml $(XVALS) $(ES_IMAGE_SET) -f -
 
 # `--wait` so the Elasticsearch CR is gone before the check below decides
 # whether the operator is still needed.
