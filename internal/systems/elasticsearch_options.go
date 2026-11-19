@@ -116,6 +116,7 @@ type esOptions struct {
 	mode     string // expected index.mode of the backing index, "" = not asserted
 	message  string // "", esMsgText or esMsgKeyword
 	noIndex  []string
+	indexed  []string
 	settings map[string]string
 }
 
@@ -163,6 +164,8 @@ func parseESOptions(raw []string) (esOptions, error) {
 			o.message = v
 		case k == "noindex":
 			o.noIndex = strings.Split(v, "+")
+		case k == "index":
+			o.indexed = strings.Split(v, "+")
 		case strings.HasPrefix(k, "set."):
 			o.settings[strings.TrimPrefix(k, "set.")] = v
 		default:
@@ -174,6 +177,14 @@ func parseESOptions(raw []string) (esOptions, error) {
 	for _, k := range []string{"index.mode", "mode"} {
 		if _, ok := o.settings[k]; ok && o.mode != "" {
 			return o, fmt.Errorf("elasticsearch options mode= and set.%s both name the index mode: use one", k)
+		}
+	}
+	// A field in both index= and noindex= would let one silently win.
+	for _, f := range o.indexed {
+		for _, nf := range o.noIndex {
+			if f == nf {
+				return o, fmt.Errorf("field %q is in both index= and noindex=", f)
+			}
 		}
 	}
 	return o, nil
@@ -194,7 +205,7 @@ func sortOrder(fields []string) []string {
 
 // needsTemplate reports whether the options change the index template.
 func (o esOptions) needsTemplate() bool {
-	return len(o.sort) > 0 || o.message != "" || len(o.noIndex) > 0 || len(o.settings) > 0
+	return len(o.sort) > 0 || o.message != "" || len(o.noIndex) > 0 || len(o.indexed) > 0 || len(o.settings) > 0
 }
 
 // needsIdentity reports whether the node's version or build is checked.
@@ -550,6 +561,32 @@ func noIndexMapping(field string) (map[string]any, error) {
 	return nil, fmt.Errorf("noindex field %q: not a field of the workload pool", field)
 }
 
+// indexPoolMapping is the mirror of noIndexPoolMapping: same type, "index" set
+// to true instead of false. Used to selectively restore the inverted index on
+// specific fields in a mode (such as logsdb_columnar) that otherwise defaults
+// keyword and numeric fields to doc-values-only.
+func indexPoolMapping(f synthetic.PoolField) map[string]any {
+	switch {
+	case f.Name == "ip":
+		return map[string]any{"type": "ip", "index": true}
+	case f.Numeric:
+		return map[string]any{"type": "long", "index": true}
+	}
+	return map[string]any{"type": "keyword", "index": true}
+}
+
+// indexMapping returns the mapping of a named field with its inverted index
+// restored. Like noIndexMapping, names resolve through the workload pool, so a
+// name the workload does not emit is an error instead of a silent no-op.
+func indexMapping(field string) (map[string]any, error) {
+	for _, pf := range synthetic.AllPoolFields() {
+		if pf.Name == field {
+			return indexPoolMapping(pf), nil
+		}
+	}
+	return nil, fmt.Errorf("index field %q: not a field of the workload pool", field)
+}
+
 // mappingProps is the explicit field mapping the options ask for, and the
 // index sort settings that need it. It is what the template carries and what
 // verifyMappings reads back from the backing index.
@@ -588,6 +625,16 @@ func (o esOptions) mappingProps() (props map[string]any, settings map[string]any
 			return nil, nil, fmt.Errorf("noindex field %q: dotted names are not supported", f)
 		}
 		m, err := noIndexMapping(f)
+		if err != nil {
+			return nil, nil, err
+		}
+		props[f] = m
+	}
+	for _, f := range o.indexed {
+		if strings.Contains(f, ".") {
+			return nil, nil, fmt.Errorf("index field %q: dotted names are not supported", f)
+		}
+		m, err := indexMapping(f)
 		if err != nil {
 			return nil, nil, err
 		}

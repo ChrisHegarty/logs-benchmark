@@ -147,6 +147,74 @@ func TestNoIndexRejectsDottedNames(t *testing.T) {
 	}
 }
 
+// index= is the mirror of noindex=: same resolution through the workload
+// pool, same per-field mapping shape, "index" flips to true instead of false.
+// It exists to selectively restore the inverted index on specific fields in a
+// mode that otherwise defaults keyword and numeric fields to doc-values-only.
+
+func TestIndexRejectsDottedNames(t *testing.T) {
+	o, _ := parseESOptions([]string{"index=host.name"})
+	if _, err := o.templateJSON(); err == nil || !strings.Contains(err.Error(), "dotted") {
+		t.Fatalf("want dotted-name error, got %v", err)
+	}
+}
+
+func TestIndexUnknownFieldIsAnError(t *testing.T) {
+	o, _ := parseESOptions([]string{"index=reqest_id"})
+	if _, err := o.templateJSON(); err == nil {
+		t.Fatal("a misspelled field must fail, not silently stay unindexed")
+	}
+}
+
+func TestIndexSetsIndexTrue(t *testing.T) {
+	o, err := parseESOptions([]string{"mode=logsdb_columnar", "index=request_id"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := o.templateJSON()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tpl struct {
+		Template struct {
+			Mappings struct {
+				Properties map[string]map[string]any `json:"properties"`
+			} `json:"mappings"`
+		} `json:"template"`
+	}
+	if err := json.Unmarshal(b, &tpl); err != nil {
+		t.Fatal(err)
+	}
+	props := tpl.Template.Mappings.Properties
+	if props["request_id"]["type"] != "keyword" || props["request_id"]["index"] != true {
+		t.Fatalf("request_id must be keyword with index:true, got %v", props["request_id"])
+	}
+}
+
+func TestIndexAndNoIndexOnSameFieldIsAnError(t *testing.T) {
+	if _, err := parseESOptions([]string{"index=request_id", "noindex=request_id"}); err == nil {
+		t.Fatal("a field in both index= and noindex= must fail, not let one silently win")
+	}
+}
+
+func TestIndexExplicitMatchesPoolMapping(t *testing.T) {
+	for _, f := range []string{"status", "ip", "bytes_sent", "request_id", "zone"} {
+		got, err := indexMapping(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var want map[string]any
+		for _, pf := range synthetic.AllPoolFields() {
+			if pf.Name == f {
+				want = indexPoolMapping(pf)
+			}
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s: explicit %v, pool %v", f, got, want)
+		}
+	}
+}
+
 func TestParseSeqNoTotal(t *testing.T) {
 	// Real shape from Elasticsearch 9.5.5 on the baseline run: two backing
 	// indices of a data stream, one primary each, plus an unassigned-style replica
