@@ -1,5 +1,13 @@
 # logs-benchmark
 
+> **Note:** This is a fork of
+> [VictoriaMetrics/logs-benchmark](https://github.com/VictoriaMetrics/logs-benchmark),
+> modified by Elastic to reproduce the results in
+> [VictoriaMetrics said Elasticsearch was behind on logs. Three settings and an index mode later, it isn't.](BLOG_URL_TODO)
+> It is not the official VictoriaMetrics benchmark and is not endorsed by
+> VictoriaMetrics. The original code is licensed under MIT; see
+> [LICENSE](LICENSE).
+
 logs-benchmark is a harness that compares engines that store and search
 logs. It serves two goals:
 
